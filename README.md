@@ -1,6 +1,6 @@
 # Pixelizer
 
-<img width="1920" height="1080" alt="Image" src="https://github.com/user-attachments/assets/6733f6d3-eef5-42a2-8b9d-0903fb29228b" />
+<img width="1920" height="1080" alt="Image" src="https://github.com/user-attachments/assets/eca273d8-33b1-42b1-bad7-d611b2c79f44" />
 
 <img width="1920" height="1080" alt="Image" src="https://github.com/user-attachments/assets/65f84f70-3946-4d5e-a76d-657cef0d4abb" />
 
