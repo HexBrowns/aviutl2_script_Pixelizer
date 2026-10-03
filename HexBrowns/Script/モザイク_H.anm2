@@ -1,0 +1,727 @@
+--information:モザイク_H v1.01 by HexBrowns
+--label:HexScript
+--require:2003700
+
+--group:拡張設定,true
+--select@palette_mode:パレットモード=0,デフォルト=0,GameBoy=1,16-bit=2,4階調グレースケール=3
+--select@edge_style:エッジスタイル=0,ソフト=0,エッジ強調=1
+--select@grid_mode:ドット固定=0,オブジェクト固定=0,画面固定=1,オブジェクト中心=2
+--group
+
+--group:ベース,true
+--track@pixel_size:ピクセルサイズ,1,1000,4,1,,0.1
+--track@color_levels:色数,0,256,0,1,無効
+--track@tone_steps:階調数,0,8,0,1,無効
+--group
+
+--group:ディザリングの設定,true
+--select@dither_mode:ディザリング=0,なし=0,2x2=1,4x4=2
+--track@dither_strength:ディザリング強度,0,100,35,1
+--hide@dither_strength:dither_mode==0
+--group
+
+--group:エッジ,true
+--track@edge_strength:エッジ強度,0,100,0,1
+--group
+
+--group:透過保護,false
+--check@alpha_protect:透明エッジ保護,1
+--track@alpha_threshold:透過しきい値,0,255,8,1
+--hide@alpha_threshold:alpha_protect==0
+--group
+
+--group:サンプリング,true
+--select@color_mode:色の決め方=0,中心の色=0,ブロックの平均=1
+--group
+
+--[[
+モザイク_H v1.01
+
+原作: Script/Pixelizer/Pixelizer.anm2（Pixelizer v1.0.0 / nctype / MIT）。原作は書き換えずに残してある。
+シェーダーの色の処理（パレット・階調・ディザリング・エッジ）と画面固定の座標変換は原作のまま。
+経緯と直した点の正本: AI/scripts/issues/20260915_mosaic_scripts_pixelizer_fork.md
+机上検証: AI/scripts/モザイク_H/verify_mosaic.py
+
+原作から変えたこと
+  1. ピクセルサイズの上限 64 → 1000（トラックバーの操作範囲は 1〜100。それより大きい値は数値で入れる）
+  2. 色数に「無効」（0）を足した。0 / 1 のときは色を量子化しない（原作は下限 2 で、上限の 32 でも 32 段に丸まる）
+  3. 新規に置いたときの既定値を素直なモザイクにした（色数=無効 / 階調数=無効 / エッジ強度=0）
+  4. 色の決め方に「ブロックの平均」を足した。縮小バッファ（cache:mosaic_h/map、1 ブロック 1 画素）へ
+     ブロック内の画素の平均を書き、本体のパスでそれを引く 2 パス構成
+     （縮小してから描く構成は Mosaic@Stylize_K（Korarei / MIT）に倣った。コードは借りていない）
+  5. ドット固定の選択肢の末尾に「オブジェクト中心」を足した（格子の線がオブジェクトの中心を通る。
+     ピクセル化.anm2 の方式）
+  6. 色数=無効 かつ パレットモード=デフォルト のときは saturate を掛けない（1.0 を超える値と負の値を保つ）
+  7. ディザリングのパターンを負のブロック番号でも崩れない剰余にした（0 以上では原作と同じ値）。
+     色数=無効 のときの振幅はパレットの段数から取り、デフォルトパレットではディザリングを掛けない
+  8. ディザリング強度 / 透過しきい値 を、効かない設定のときに隠す
+
+v1.01 の変更
+  - グループ名「ディザリング」を「ディザリングの設定」にした（項目「ディザリング」と同名だと、
+    閉じて保存したときに「ディザリング.hide」が 2 回書かれ、重複キーの警告が出るため）。挙動は変わらない
+
+保存キー（項目名と選択肢のラベル）は原作と同じにしてある。.aup2 の effect.name=Pixelizer を
+effect.name=モザイク_H に書き換えれば、原作で保存した値がそのまま読まれる。
+「色の決め方」だけは原作に無いので既定値（中心の色＝原作と同じ見え方）になる。
+項目名や選択肢のラベルを変えると保存済みの値が初期値に戻るので、変えないこと。
+新しい項目・選択肢は末尾に足すこと。
+
+注意
+  - ブロックの平均で、透明エッジ保護が ON だと、ブロックに対して細すぎる線は平均の不透明度が
+    透過しきい値を下回って消える（ピクセルサイズ 32 の 1px の線で 1/32 = 8/255）
+  - 画面固定は標準描画の X / Y / 拡大率 / 中心 / Z軸回転 だけを見る（原作と同じ）。
+    X軸・Y軸回転、カメラ、グループ制御の下で格子が画面に揃うかは未確認
+
+MIT License
+
+Copyright (c) nctype
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+（原作の配布ファイルには著作権表示の行が無く、作者名とライセンスは aviutl2-catalog の記載による。
+年は確認できていない）
+]]
+
+--[[pixelshader@ps_mosaic_h:
+Texture2D src_tex : register(t0);
+Texture2D map_tex : register(t1);
+SamplerState smp : register(s0);
+
+cbuffer constant0 : register(b0) {
+    float4 c0; // width, height, pixel size, color levels (0 = 無効)
+    float4 c1; // tone steps, dither mode, dither strength, edge strength
+    float4 c2; // alpha protect, alpha threshold, palette mode, color mode (0 = 中心 / 1 = 平均)
+    float4 c3; // edge style, grid mode (0 = オブジェクト / 1 = 画面 / 2 = 中心), map origin x, map origin y
+    float4 c4; // screenCenterX, screenCenterY, scaleX, scaleY
+    float4 c5; // cosR, sinR, centerX, centerY
+    float4 c6; // map width, map height, reserved, reserved
+};
+
+float get_luma(float3 c) {
+    return dot(c, float3(0.299, 0.587, 0.114));
+}
+
+float3 get_straight_rgb(float4 c) {
+    if (c.a <= 0.00001) {
+        return float3(0.0, 0.0, 0.0);
+    }
+    return saturate(c.rgb / c.a);
+}
+
+float sample_straight_luma(float2 uv) {
+    float4 s = src_tex.SampleLevel(smp, saturate(uv), 0.0);
+    if (s.a <= 0.00001) {
+        return 0.0;
+    }
+    return get_luma(get_straight_rgb(s));
+}
+
+float sample_alpha(float2 uv) {
+    return src_tex.SampleLevel(smp, saturate(uv), 0.0).a;
+}
+
+float3 quantize_rgb(float3 rgb, float levels) {
+    levels = max(levels, 2.0);
+    float d = levels - 1.0;
+    return floor(saturate(rgb) * d + 0.5) / d;
+}
+
+float3 quantize_tone(float3 rgb, float steps) {
+    if (steps < 2.0) {
+        return rgb;
+    }
+
+    float lum = get_luma(rgb);
+    if (lum <= 0.00001) {
+        return rgb;
+    }
+
+    float d = steps - 1.0;
+    float q = floor(saturate(lum) * d + 0.5) / d;
+    return saturate(rgb * (q / lum));
+}
+
+// 0 以上の n では fmod(n, m) と同じ値。負のブロック番号（オブジェクト中心・画面の左上より外）でも
+// 周期が崩れないように、切り捨て除算ではなく floor で剰余を取る
+float pos_mod(float v, float m) {
+    float n = floor(v);
+    return n - m * floor(n / m);
+}
+
+float bayer2(float2 p) {
+    float x = pos_mod(p.x, 2.0);
+    float y = pos_mod(p.y, 2.0);
+
+    if (y < 0.5) {
+        if (x < 0.5) return 0.0 / 4.0;
+        return 2.0 / 4.0;
+    } else {
+        if (x < 0.5) return 3.0 / 4.0;
+        return 1.0 / 4.0;
+    }
+}
+
+float bayer4(float2 p) {
+    float x = pos_mod(p.x, 4.0);
+    float y = pos_mod(p.y, 4.0);
+
+    if (y < 0.5) {
+        if (x < 0.5) return  0.0 / 16.0;
+        if (x < 1.5) return  8.0 / 16.0;
+        if (x < 2.5) return  2.0 / 16.0;
+        return 10.0 / 16.0;
+    }
+    if (y < 1.5) {
+        if (x < 0.5) return 12.0 / 16.0;
+        if (x < 1.5) return  4.0 / 16.0;
+        if (x < 2.5) return 14.0 / 16.0;
+        return  6.0 / 16.0;
+    }
+    if (y < 2.5) {
+        if (x < 0.5) return  3.0 / 16.0;
+        if (x < 1.5) return 11.0 / 16.0;
+        if (x < 2.5) return  1.0 / 16.0;
+        return  9.0 / 16.0;
+    }
+
+    if (x < 0.5) return 15.0 / 16.0;
+    if (x < 1.5) return  7.0 / 16.0;
+    if (x < 2.5) return 13.0 / 16.0;
+    return  5.0 / 16.0;
+}
+
+float ordered_dither(float2 blockPos, float mode) {
+    if (mode < 0.5) {
+        return 0.0;
+    }
+    if (mode < 1.5) {
+        return bayer2(blockPos) - 0.375;
+    }
+    return bayer4(blockPos) - 0.46875;
+}
+
+float simple_edge(float2 uv, float2 stepUV) {
+    float a0 = sample_alpha(uv);
+
+    float l1 = sample_straight_luma(uv + float2(-stepUV.x, 0.0));
+    float l2 = sample_straight_luma(uv + float2( stepUV.x, 0.0));
+    float l3 = sample_straight_luma(uv + float2(0.0, -stepUV.y));
+    float l4 = sample_straight_luma(uv + float2(0.0,  stepUV.y));
+
+    float a1 = sample_alpha(uv + float2(-stepUV.x, 0.0));
+    float a2 = sample_alpha(uv + float2( stepUV.x, 0.0));
+    float a3 = sample_alpha(uv + float2(0.0, -stepUV.y));
+    float a4 = sample_alpha(uv + float2(0.0,  stepUV.y));
+
+    float lumDiff = abs(l1 - l2) + abs(l3 - l4);
+    float alphaDiff = abs(a1 - a2) + abs(a3 - a4) + abs(a0 - a1) + abs(a0 - a2) + abs(a0 - a3) + abs(a0 - a4);
+
+    return saturate(lumDiff * 1.2 + alphaDiff * 1.0);
+}
+
+float dist2(float3 a, float3 b) {
+    float3 d = a - b;
+    return dot(d, d);
+}
+
+float3 nearest_palette_color(float3 rgb, float3 p0, float3 p1, float3 p2, float3 p3) {
+    float3 best = p0;
+    float bestD = dist2(rgb, p0);
+    float d1 = dist2(rgb, p1);
+    float d2 = dist2(rgb, p2);
+    float d3 = dist2(rgb, p3);
+
+    if (d1 < bestD) { bestD = d1; best = p1; }
+    if (d2 < bestD) { bestD = d2; best = p2; }
+    if (d3 < bestD) { best = p3; }
+
+    return best;
+}
+
+float3 palette_gameboy(float3 rgb) {
+    float3 p0 = float3(15.0, 56.0, 15.0) / 255.0;
+    float3 p1 = float3(48.0, 98.0, 48.0) / 255.0;
+    float3 p2 = float3(139.0, 172.0, 15.0) / 255.0;
+    float3 p3 = float3(155.0, 188.0, 15.0) / 255.0;
+    return nearest_palette_color(rgb, p0, p1, p2, p3);
+}
+
+float3 palette_gray4(float3 rgb) {
+    float lum = get_luma(rgb);
+    float q = floor(saturate(lum) * 3.0 + 0.5) / 3.0;
+    return float3(q, q, q);
+}
+
+float3 quantize_565(float3 rgb) {
+    float r = floor(saturate(rgb.r) * 31.0 + 0.5) / 31.0;
+    float g = floor(saturate(rgb.g) * 63.0 + 0.5) / 63.0;
+    float b = floor(saturate(rgb.b) * 31.0 + 0.5) / 31.0;
+    return float3(r, g, b);
+}
+
+float3 apply_palette_mode(float3 rgb, float paletteMode, float levels) {
+    if (paletteMode > 0.5 && paletteMode < 1.5) {
+        return palette_gameboy(rgb);
+    }
+    if (paletteMode >= 1.5 && paletteMode < 2.5) {
+        return quantize_565(rgb);
+    }
+    if (paletteMode >= 2.5) {
+        return palette_gray4(rgb);
+    }
+    return quantize_rgb(rgb, levels);
+}
+
+float2 object_grid_sample_uv(float2 uv, float2 resolution, float psize) {
+    float2 sourcePos = uv * resolution;
+    float2 blockPos = floor(sourcePos / psize);
+    float2 samplePos = blockPos * psize + psize * 0.5;
+    samplePos.x = min(samplePos.x, resolution.x - 0.5);
+    samplePos.y = min(samplePos.y, resolution.y - 0.5);
+    return samplePos / resolution;
+}
+
+// 格子の線がオブジェクトの中心を通る（ピクセル化.anm2 と同じ）。ブロック番号は負になりうる
+float2 center_grid_sample_uv(float2 blockPos, float2 resolution, float psize) {
+    float2 samplePos = resolution * 0.5 + blockPos * psize + psize * 0.5;
+    samplePos.x = clamp(samplePos.x, 0.5, resolution.x - 0.5);
+    samplePos.y = clamp(samplePos.y, 0.5, resolution.y - 0.5);
+    return samplePos / resolution;
+}
+
+float2 object_pixel_to_screen(float2 sourcePos, float2 resolution) {
+    float localX = (sourcePos.x + 0.5 - resolution.x * 0.5 - c5.z) * c4.z;
+    float localY = (sourcePos.y + 0.5 - resolution.y * 0.5 - c5.w) * c4.w;
+
+    return float2(
+        c4.x + localX * c5.x - localY * c5.y,
+        c4.y + localX * c5.y + localY * c5.x
+    );
+}
+
+float2 screen_to_object_pixel(float2 screenPos, float2 resolution) {
+    float dx = screenPos.x - c4.x;
+    float dy = screenPos.y - c4.y;
+
+    float invX = dx * c5.x + dy * c5.y;
+    float invY = -dx * c5.y + dy * c5.x;
+
+    float safeScaleX = c4.z;
+    float safeScaleY = c4.w;
+
+    if (abs(safeScaleX) < 0.00001) {
+        safeScaleX = 0.00001;
+    }
+    if (abs(safeScaleY) < 0.00001) {
+        safeScaleY = 0.00001;
+    }
+
+    return float2(
+        invX / safeScaleX + resolution.x * 0.5 + c5.z - 0.5,
+        invY / safeScaleY + resolution.y * 0.5 + c5.w - 0.5
+    );
+}
+
+float2 screen_grid_sample_uv(float2 uv, float2 resolution, float psize) {
+    float2 sourcePos = uv * resolution;
+    float2 screenPos = object_pixel_to_screen(sourcePos, resolution);
+
+    float2 snappedScreen = floor(screenPos / psize) * psize + psize * 0.5;
+    float2 samplePos = screen_to_object_pixel(snappedScreen, resolution);
+
+    samplePos.x = clamp(samplePos.x, 0.5, resolution.x - 0.5);
+    samplePos.y = clamp(samplePos.y, 0.5, resolution.y - 0.5);
+
+    return samplePos / resolution;
+}
+
+float2 screen_grid_index(float2 uv, float2 resolution, float psize) {
+    float2 sourcePos = uv * resolution;
+    float2 screenPos = object_pixel_to_screen(sourcePos, resolution);
+    return floor(screenPos / psize);
+}
+
+// 画素の中心（sourcePos = x + 0.5）が属するブロックの番号。
+// 正本はここ。ps_mosaic_h_average に同じ関数を複製してある（変更時は両方直す）
+float2 block_index(float2 sourcePos, float2 resolution, float psize, float gridMode) {
+    float2 b = floor(sourcePos / psize);
+    if (gridMode > 1.5) {
+        b = floor((sourcePos - resolution * 0.5) / psize);
+    } else if (gridMode > 0.5) {
+        b = floor(object_pixel_to_screen(sourcePos, resolution) / psize);
+    }
+    return b;
+}
+
+float4 ps_mosaic_h(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target {
+    float width  = max(c0.x, 1.0);
+    float height = max(c0.y, 1.0);
+    float psize  = max(c0.z, 1.0);
+    float levels = c0.w;
+
+    float toneSteps      = max(c1.x, 0.0);
+    float ditherMode     = c1.y;
+    float ditherStrength = saturate(c1.z / 100.0);
+    float edgeStrength   = saturate(c1.w / 100.0);
+
+    float alphaProtect   = c2.x;
+    float alphaThreshold = saturate(c2.y / 255.0);
+    float paletteMode    = c2.z;
+    float colorMode      = c2.w;
+
+    float edgeStyle      = c3.x;
+    float gridMode       = c3.y;
+
+    // 色数 2 以上か、デフォルト以外のパレットのときだけ色を 0〜1 に収める
+    bool clampColor = (levels >= 2.0) || (paletteMode > 0.5);
+
+    float2 resolution = float2(width, height);
+    float2 sourcePos = uv * resolution;
+
+    float2 blockPos = floor(sourcePos / psize);
+    float2 sampleUV = object_grid_sample_uv(uv, resolution, psize);
+
+    if (gridMode > 1.5) {
+        blockPos = floor((pos.xy - resolution * 0.5) / psize);
+        sampleUV = center_grid_sample_uv(blockPos, resolution, psize);
+    } else if (gridMode > 0.5) {
+        sampleUV = screen_grid_sample_uv(uv, resolution, psize);
+        blockPos = screen_grid_index(uv, resolution, psize);
+    }
+
+    float4 src = src_tex.SampleLevel(smp, sampleUV, 0.0);
+
+    if (colorMode > 0.5) {
+        // 平均は縮小バッファ（1 ブロック 1 画素）から引く。番号は画素の中心（pos.xy）で決める
+        // ＝縮小バッファを書いたパスと同じ入力。空のブロック（アルファ -1）なら中心の色のまま
+        float2 mapIndex = block_index(pos.xy, resolution, psize, gridMode) - c3.zw;
+        if (mapIndex.x >= 0.0 && mapIndex.y >= 0.0 && mapIndex.x < c6.x && mapIndex.y < c6.y) {
+            float4 avg = map_tex.Load(int3((int)mapIndex.x, (int)mapIndex.y, 0));
+            if (avg.a >= 0.0) {
+                src = avg;
+            }
+        }
+    }
+
+    if (src.a <= 0.00001) {
+        return float4(0.0, 0.0, 0.0, 0.0);
+    }
+
+    if (alphaProtect > 0.5 && src.a <= alphaThreshold) {
+        return float4(0.0, 0.0, 0.0, 0.0);
+    }
+
+    float3 rgb = src.rgb / src.a;
+    if (clampColor) {
+        rgb = saturate(rgb);
+    }
+
+    rgb = quantize_tone(rgb, toneSteps);
+
+    // ディザリングの振幅は色数から。色数=無効 ならパレットの段数から取る（デフォルトは掛けない）
+    float ditherLevels = levels;
+    if (levels < 2.0) {
+        ditherLevels = 0.0;
+        if (paletteMode > 0.5 && paletteMode < 1.5) {
+            ditherLevels = 4.0;
+        } else if (paletteMode >= 1.5 && paletteMode < 2.5) {
+            ditherLevels = 32.0;
+        } else if (paletteMode >= 2.5) {
+            ditherLevels = 4.0;
+        }
+    }
+
+    if (ditherMode > 0.5 && ditherStrength > 0.0 && ditherLevels >= 2.0) {
+        float dv = ordered_dither(blockPos, ditherMode);
+        float amplitude = ditherStrength / max(ditherLevels - 1.0, 1.0);
+        rgb = saturate(rgb + dv * amplitude);
+    }
+
+    if (clampColor) {
+        rgb = apply_palette_mode(rgb, paletteMode, levels);
+    }
+
+    if (edgeStrength > 0.0) {
+        float2 edgeStep = float2(psize / width, psize / height);
+        float e = simple_edge(sampleUV, edgeStep);
+
+        if (edgeStyle > 0.5) {
+            // Strong edge mode: draw a darker contour instead of dimming the whole area.
+            float edgeMask = saturate((e - 0.08) * 2.2) * edgeStrength;
+            rgb = lerp(rgb, rgb * 0.08, edgeMask);
+        } else {
+            // Soft edge mode: darken detected edges conservatively.
+            rgb *= saturate(1.0 - e * edgeStrength * 0.70);
+        }
+    }
+
+    if (clampColor) {
+        rgb = saturate(rgb);
+    }
+
+    return float4(rgb * src.a, src.a);
+}
+]]
+
+--[[pixelshader@ps_mosaic_h_average:
+Texture2D src_tex : register(t0);
+
+cbuffer constant0 : register(b0) {
+    float4 c0; // width, height, pixel size, color levels
+    float4 c1; // tone steps, dither mode, dither strength, edge strength
+    float4 c2; // alpha protect, alpha threshold, palette mode, color mode
+    float4 c3; // edge style, grid mode, map origin x, map origin y
+    float4 c4; // screenCenterX, screenCenterY, scaleX, scaleY
+    float4 c5; // cosR, sinR, centerX, centerY
+    float4 c6; // map width, map height, reserved, reserved
+};
+
+// 以下 3 つは ps_mosaic_h の複製（正本は ps_mosaic_h。変更時は両方直す）
+float2 object_pixel_to_screen(float2 sourcePos, float2 resolution) {
+    float localX = (sourcePos.x + 0.5 - resolution.x * 0.5 - c5.z) * c4.z;
+    float localY = (sourcePos.y + 0.5 - resolution.y * 0.5 - c5.w) * c4.w;
+
+    return float2(
+        c4.x + localX * c5.x - localY * c5.y,
+        c4.y + localX * c5.y + localY * c5.x
+    );
+}
+
+float2 screen_to_object_pixel(float2 screenPos, float2 resolution) {
+    float dx = screenPos.x - c4.x;
+    float dy = screenPos.y - c4.y;
+
+    float invX = dx * c5.x + dy * c5.y;
+    float invY = -dx * c5.y + dy * c5.x;
+
+    float safeScaleX = c4.z;
+    float safeScaleY = c4.w;
+
+    if (abs(safeScaleX) < 0.00001) {
+        safeScaleX = 0.00001;
+    }
+    if (abs(safeScaleY) < 0.00001) {
+        safeScaleY = 0.00001;
+    }
+
+    return float2(
+        invX / safeScaleX + resolution.x * 0.5 + c5.z - 0.5,
+        invY / safeScaleY + resolution.y * 0.5 + c5.w - 0.5
+    );
+}
+
+float2 block_index(float2 sourcePos, float2 resolution, float psize, float gridMode) {
+    float2 b = floor(sourcePos / psize);
+    if (gridMode > 1.5) {
+        b = floor((sourcePos - resolution * 0.5) / psize);
+    } else if (gridMode > 0.5) {
+        b = floor(object_pixel_to_screen(sourcePos, resolution) / psize);
+    }
+    return b;
+}
+
+// 縮小バッファの 1 画素 = 1 ブロック。そのブロックに属する画素（Premultiplied のまま）を平均する。
+// ブロックの外接矩形を画素で走査し、属するかは block_index で判定する（回転・拡大しても同じ規則）
+float4 ps_mosaic_h_average(float4 pos : SV_Position) : SV_Target {
+    float width  = max(c0.x, 1.0);
+    float height = max(c0.y, 1.0);
+    float psize  = max(c0.z, 1.0);
+    float gridMode = c3.y;
+    float2 resolution = float2(width, height);
+    float2 block = floor(pos.xy) + c3.zw;
+
+    float2 lo = block * psize;
+    float2 hi = lo + float2(psize, psize);
+    if (gridMode > 1.5) {
+        lo = lo + resolution * 0.5;
+        hi = hi + resolution * 0.5;
+    } else if (gridMode > 0.5) {
+        float2 p0 = screen_to_object_pixel(block * psize, resolution);
+        float2 p1 = screen_to_object_pixel(float2(block.x + 1.0, block.y) * psize, resolution);
+        float2 p2 = screen_to_object_pixel(float2(block.x, block.y + 1.0) * psize, resolution);
+        float2 p3 = screen_to_object_pixel(float2(block.x + 1.0, block.y + 1.0) * psize, resolution);
+        lo = min(min(p0, p1), min(p2, p3));
+        hi = max(max(p0, p1), max(p2, p3));
+    }
+
+    // 画素 x の中心は x + 0.5。画面固定は逆変換の丸めを見込んで 1 画素ずつ広げて走査し、
+    // 判定は block_index に任せる。オブジェクト固定 / 中心は整数刻みで誤差が無いので、
+    // 中心が [lo, hi) に入る画素ちょうど（ブロック 1 個ぶん）だけを走査する
+    float fx0 = floor(lo.x - 0.5);
+    float fx1 = ceil(hi.x - 0.5);
+    float fy0 = floor(lo.y - 0.5);
+    float fy1 = ceil(hi.y - 0.5);
+    if (gridMode < 0.5 || gridMode > 1.5) {
+        fx0 = ceil(lo.x - 0.5);
+        fx1 = ceil(hi.x - 0.5) - 1.0;
+        fy0 = ceil(lo.y - 0.5);
+        fy1 = ceil(hi.y - 0.5) - 1.0;
+    }
+    fx0 = clamp(fx0, 0.0, width - 1.0);
+    fx1 = clamp(fx1, 0.0, width - 1.0);
+    fy0 = clamp(fy0, 0.0, height - 1.0);
+    fy1 = clamp(fy1, 0.0, height - 1.0);
+    int x0 = (int)fx0;
+    int x1 = (int)fx1;
+    int y0 = (int)fy0;
+    int y1 = (int)fy1;
+
+    float4 sum = float4(0.0, 0.0, 0.0, 0.0);
+    float cnt = 0.0;
+    [loop]
+    for (int y = y0; y <= y1; y++) {
+        [loop]
+        for (int x = x0; x <= x1; x++) {
+            float2 b = block_index(float2((float)x + 0.5, (float)y + 0.5), resolution, psize, gridMode);
+            if (b.x == block.x && b.y == block.y) {
+                sum += src_tex.Load(int3(x, y, 0));
+                cnt += 1.0;
+            }
+        }
+    }
+
+    if (cnt < 0.5) {
+        // 空のブロック。メインのパスは中心の色に戻す（アルファ -1 を目印にする）
+        return float4(0.0, 0.0, 0.0, -1.0);
+    }
+    return sum / cnt;
+}
+]]
+
+local function clamp(v, lo, hi)
+  if v < lo then return lo end
+  if v > hi then return hi end
+  return v
+end
+
+if obj.w <= 0 or obj.h <= 0 then
+  return
+end
+
+local ap = 0
+if alpha_protect == 1 or alpha_protect == true then
+  ap = 1
+end
+
+local dm = math.floor(clamp(tonumber(dither_mode) or 0, 0, 2))
+local pm = math.floor(clamp(tonumber(palette_mode) or 0, 0, 3))
+local es = math.floor(clamp(tonumber(edge_style) or 0, 0, 1))
+local gm = math.floor(clamp(tonumber(grid_mode) or 0, 0, 2))
+local cm = math.floor(clamp(tonumber(color_mode) or 0, 0, 1))
+
+local psize = math.max(tonumber(pixel_size) or 1, 1)
+-- 色数 0 / 1 は「無効」（量子化しない）。2 以上は原作と同じ
+local levels = tonumber(color_levels) or 0
+if levels < 2 then
+  levels = 0
+end
+
+-- Compose the output-item transform with the script-relative transform.（原作と同じ）
+local output_x = obj.getvalue("x") or obj.x or 0
+local output_y = obj.getvalue("y") or obj.y or 0
+local output_sx = obj.getvalue("sx") or 1
+local output_sy = obj.getvalue("sy") or 1
+local output_cx = obj.getvalue("cx") or 0
+local output_cy = obj.getvalue("cy") or 0
+local output_rz = obj.getvalue("rz") or 0
+
+local base_x = output_x + (obj.ox or 0)
+local base_y = output_y + (obj.oy or 0)
+local scale_x = output_sx * (obj.sx or 1)
+local scale_y = output_sy * (obj.sy or 1)
+local center_x = output_cx + (obj.cx or 0)
+local center_y = output_cy + (obj.cy or 0)
+local rz = (output_rz + (obj.rz or 0)) * math.pi / 180
+local cos_r = math.cos(rz)
+local sin_r = math.sin(rz)
+local screen_center_x = (obj.screen_w or 0) * 0.5 + base_x
+local screen_center_y = (obj.screen_h or 0) * 0.5 + base_y
+
+local W, H = obj.w, obj.h
+
+-- 画素の中心 (px, py) が属するブロックの番号（HLSL の block_index と同じ式）
+local function block_of(px, py)
+  if gm == 2 then
+    return math.floor((px - W * 0.5) / psize), math.floor((py - H * 0.5) / psize)
+  elseif gm == 1 then
+    local lx = (px + 0.5 - W * 0.5 - center_x) * scale_x
+    local ly = (py + 0.5 - H * 0.5 - center_y) * scale_y
+    local sx = screen_center_x + lx * cos_r - ly * sin_r
+    local sy = screen_center_y + lx * sin_r + ly * cos_r
+    return math.floor(sx / psize), math.floor(sy / psize)
+  end
+  return math.floor(px / psize), math.floor(py / psize)
+end
+
+-- 平均の縮小バッファ。1 画素 = 1 ブロック。四隅の画素のブロックから範囲を決め、
+-- HLSL（float）と Lua（double）の丸めの差を吸収するため 1 ブロックずつ広げる
+local MAP = "cache:mosaic_h/map"
+local MAP_MAX = 16384
+local map_x, map_y, map_w, map_h = 0, 0, 1, 1
+if cm == 1 and psize <= 1 and gm ~= 1 then
+  cm = 0                                  -- 1 画素のブロックは平均しても中心の色と同じ
+end
+if cm == 1 then
+  local kx0, ky0 = math.huge, math.huge
+  local kx1, ky1 = -math.huge, -math.huge
+  for _, c in ipairs({ { 0.5, 0.5 }, { W - 0.5, 0.5 }, { 0.5, H - 0.5 }, { W - 0.5, H - 0.5 } }) do
+    local bx, by = block_of(c[1], c[2])
+    kx0 = math.min(kx0, bx)
+    kx1 = math.max(kx1, bx)
+    ky0 = math.min(ky0, by)
+    ky1 = math.max(ky1, by)
+  end
+  map_x, map_y = kx0 - 1, ky0 - 1
+  map_w, map_h = kx1 - kx0 + 3, ky1 - ky0 + 3
+  if map_w > MAP_MAX or map_h > MAP_MAX or map_w ~= map_w or map_h ~= map_h then
+    cm = 0                                -- 縮小バッファが作れない大きさなら中心の色で描く
+    map_x, map_y, map_w, map_h = 0, 0, 1, 1
+  end
+end
+
+local params = {
+  W,
+  H,
+  psize,
+  levels,
+
+  math.max(tone_steps, 0),
+  dm,
+  clamp(dither_strength, 0, 100),
+  clamp(edge_strength, 0, 100),
+
+  ap,
+  clamp(alpha_threshold, 0, 255),
+  pm,
+  cm,
+
+  es, gm, map_x, map_y,
+
+  screen_center_x, screen_center_y, scale_x, scale_y,
+  cos_r, sin_r, center_x, center_y,
+
+  map_w, map_h, 0, 0,
+}
+
+-- 中心の色のときも t1 を空けないよう 1x1 で用意する
+obj.clearbuffer(MAP, map_w, map_h)
+if cm == 1 then
+  obj.pixelshader("ps_mosaic_h_average", MAP, { "object" }, params, "copy")
+end
+obj.pixelshader("ps_mosaic_h", "object", { "object", MAP }, params, "copy", "clamp")
