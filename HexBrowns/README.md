@@ -1,7 +1,6 @@
 # HexBrowns による追加
 
-このフォークは nctype さんの [Pixelizer](https://github.com/nctype/aviutl2_script_Pixelizer) に、HexBrowns が改変したスクリプトを足したものです。
-元のファイルは変えていません。追加したファイルは、すべてこの `HexBrowns/` フォルダにあります。
+nctypeさんの [Pixelizer](https://github.com/nctype/aviutl2_script_Pixelizer) をフォークしたものです。
 
 | ファイル | 内容 | 説明書 |
 |---|---|---|
@@ -9,11 +8,11 @@
 
 ## 導入
 
-`Script/` の中身を、AviUtl2 の `Script` フォルダ（既定は `C:\ProgramData\aviutl2\Script`）へコピーして、AviUtl2 を起動し直します。
-元のスクリプトとは別の名前なので、並べて置けます。
+使用したいスクリプトを `Script` から取り出し、AviUtl2の `Script` フォルダへコピーして、AviUtl2 を起動します。
+元のスクリプトとは名称が違うため競合の心配は不要です。
 
 ## ライセンス
 
-MIT（このリポジトリの `LICENSE` と同じ。ファイルの末尾にも全文がある）
+MIT
 
-HexBrowns のほかのスクリプトは [HexBrowns/HexScript](https://github.com/HexBrowns/HexScript) にあります。
+他のスクリプトは [HexBrowns/HexScript](https://github.com/HexBrowns/HexScript) にあります。
