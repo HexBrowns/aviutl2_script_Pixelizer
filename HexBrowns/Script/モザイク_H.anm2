@@ -1,4 +1,4 @@
---information:モザイク_H v1.10 by HexBrowns
+--information:モザイク_H v1.20 by HexBrowns
 --label:HexScript
 --require:2003700
 
@@ -15,7 +15,7 @@
 --group
 
 --group:ディザリングの設定,true
---select@dither_mode:ディザリング=0,なし=0,2x2=1,4x4=2
+--select@dither_mode:ディザリング=0,なし=0,2x2=1,4x4=2,8x8=3,ブルーノイズ風=4,ホワイトノイズ=5
 --track@dither_strength:ディザリング強度,0,100,35,1
 --hide@dither_strength:dither_mode==0
 --group
@@ -31,9 +31,10 @@
 --group
 
 --group:サンプリング,true
---select@color_mode:色の決め方=0,中心の色=0,ブロックの平均=1
+--select@color_mode:色の決め方=0,中心の色=0,ブロックの平均=1,中央値=2,多数決=3,最も明るい色=4,最も暗い色=5
 --check@avg_linear:リニアで平均,0
 --hide@avg_linear:color_mode==0
+--hide@avg_linear:color_mode>1
 --group
 
 --group:色の比較,true
@@ -42,7 +43,7 @@
 --group
 
 --[[
-モザイク_H v1.10
+モザイク_H v1.20
 
 原作: Script/Pixelizer/Pixelizer.anm2（Pixelizer v1.0.0 / nctype / MIT）。原作は書き換えずに残してある。
 シェーダーの色の処理（パレット・階調・ディザリング・エッジ）と画面固定の座標変換は原作のまま。
@@ -73,9 +74,29 @@ v1.10 の変更（仕様 AI/specifications/20261013_色空間拡張_spec.md）
   - 「色差」（パレットモード=GameBoy のとき）: パレットの最近傍を選ぶ色差（RGB / YCbCr / Oklab / CIEDE2000）。
     RGB（既定）は v1.01 までの nearest_palette_color のまま（二乗距離。順位は RGB の色差と同じ）
 
+v1.20 の変更（候補 AI/docs/20261015_方式の選択肢_候補.md の 4・5）
+  - 「ディザリング」の末尾に 8x8 / ブルーノイズ風 / ホワイトノイズ を足した。ブロック 1 個に 1 つのしきい値
+      8x8          : Bayer 8x8（(x xor y, y) のビットを交互に並べた式。@色と階調_H の @ディザ と同じ並び）。網目の細かい格子
+      ブルーノイズ風 : interleaved gradient noise（Jimenez 2014。@ディザ と同じ式）。格子の無いざらつき
+      ホワイトノイズ : ブロック番号の整数ハッシュ（lowbias32）。粗い砂目。時間では変わらない
+    2x2 / 4x4 は原作の ordered_dither のまま（dither_value が 2 以下をそこへ渡す）
+  - 「色の決め方」の末尾に 中央値 / 多数決 / 最も明るい色 / 最も暗い色 を足した。どれもブロックの中の
+    実在する画素を 1 つ選んで塗る（平均のように色を混ぜないので、縁がにじまない）。縮小バッファへ書くパスは
+    ps_mosaic_h_select（平均と同じ 2 パス構成）
+      中央値       : 不透明度 0.5 以上の画素が半数以上なら、その中で明るさ（get_luma）が中央の画素。
+                     半数未満なら、透明寄りの画素の中で不透明度が中央の画素（縁で穴も太りもしない）
+      多数決       : 各チャンネル（乗算済み RGBA）の差がどれも 1/16 以下の画素を同じ色と数え、仲間の最も多い画素
+      最も明るい色 : 黒の上に置いたときに最も明るい画素（乗算済みの明るさが最大）。明部が太る
+      最も暗い色   : 白の上に置いたときに最も暗い画素（明るさ + 透明さが最小）。暗部が太る。透明は暗い色に数えない
+    中央値・多数決は、ブロックの中の k x k の格子（k = ピクセルサイズ、6 で頭打ち）の画素だけを読む
+    （多数決は k^4 = 最大 1296 回の比較。ブロックが大きいほどブロックの数が減るので、FHD では
+    ピクセルサイズ 6 前後が最も重い）。最も明るい色・最も暗い色は平均と同じく全画素を読む
+  - 「リニアで平均」は ブロックの平均 のときだけ出す（中央値ほかでは効かないので隠す）
+
 保存キー（項目名と選択肢のラベル）は原作と同じにしてある。.aup2 の effect.name=Pixelizer を
 effect.name=モザイク_H に書き換えれば、原作で保存した値がそのまま読まれる。
 「色の決め方」「リニアで平均」「色差」は原作に無いので既定値（原作と同じ見え方）になる。
+v1.20 で足したのは選択肢だけ（項目は増やしていない）。既定（なし / 中心の色）の見え方は v1.10 と同じ。
 項目名や選択肢のラベルを変えると保存済みの値が初期値に戻るので、変えないこと。
 新しい項目・選択肢は末尾に足すこと。
 
@@ -119,7 +140,7 @@ SamplerState smp : register(s0);
 cbuffer constant0 : register(b0) {
     float4 c0; // width, height, pixel size, color levels (0 = 無効)
     float4 c1; // tone steps, dither mode, dither strength, edge strength
-    float4 c2; // alpha protect, alpha threshold, palette mode, color mode (0 = 中心 / 1 = 平均)
+    float4 c2; // alpha protect, alpha threshold, palette mode, color mode (0 = 中心 / 1 = 平均 / 2〜5 = 中央値・多数決・最明・最暗)
     float4 c3; // edge style, grid mode (0 = オブジェクト / 1 = 画面 / 2 = 中心), map origin x, map origin y
     float4 c4; // screenCenterX, screenCenterY, scaleX, scaleY
     float4 c5; // cosR, sinR, centerX, centerY
@@ -662,6 +683,48 @@ float ordered_dither(float2 blockPos, float mode) {
     return bayer4(blockPos) - 0.46875;
 }
 
+// v1.20: Bayer 8x8。(x xor y, y) のビットを交互に並べた式（@色と階調_H の @ディザ と同じ並び。
+// 同じ式で 2x2 / 4x4 を作ると bayer2 / bayer4 の表と一致する）。0〜63/64
+float bayer8(float2 p) {
+    uint x = ((uint)pos_mod(p.x, 8.0)) & 7u;
+    uint y = ((uint)pos_mod(p.y, 8.0)) & 7u;
+    uint xy = x ^ y;
+    uint v = (((xy & 1u) * 2u + (y & 1u)) << 4)
+           + ((((xy >> 1) & 1u) * 2u + ((y >> 1) & 1u)) << 2)
+           + (((xy >> 2) & 1u) * 2u + ((y >> 2) & 1u));
+    return (float)v / 64.0;
+}
+
+// v1.20: ブルーノイズ風（interleaved gradient noise。Jimenez 2014。@ディザ と同じ式）。0〜1
+float ign_noise(float2 p) {
+    return frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
+}
+
+// v1.20: ホワイトノイズ（ブロック番号の整数ハッシュ。lowbias32 の混ぜ方）。0〜1。時間では変わらない
+float white_noise(float2 p) {
+    int2 ip = int2(floor(p));
+    uint h = asuint(ip.x) * 0x9E3779B1u + asuint(ip.y) * 0x85EBCA77u;
+    h = h ^ (h >> 16);
+    h = h * 0x7FEB352Du;
+    h = h ^ (h >> 15);
+    h = h * 0x846CA68Bu;
+    h = h ^ (h >> 16);
+    return (float)(h >> 8) * (1.0 / 16777216.0);
+}
+
+// v1.20: ディザリングの値（平均 0 に寄せたしきい値）。なし / 2x2 / 4x4 は原作の ordered_dither のまま
+float dither_value(float2 blockPos, float mode) {
+    float r = ordered_dither(blockPos, mode);
+    if (mode > 4.5) {
+        r = white_noise(blockPos) - 0.5;
+    } else if (mode > 3.5) {
+        r = ign_noise(blockPos) - 0.5;
+    } else if (mode > 2.5) {
+        r = bayer8(blockPos) - 0.4921875;
+    }
+    return r;
+}
+
 float simple_edge(float2 uv, float2 stepUV) {
     float a0 = sample_alpha(uv);
 
@@ -925,7 +988,7 @@ float4 ps_mosaic_h(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target {
     }
 
     if (ditherMode > 0.5 && ditherStrength > 0.0 && ditherLevels >= 2.0) {
-        float dv = ordered_dither(blockPos, ditherMode);
+        float dv = dither_value(blockPos, ditherMode);
         float amplitude = ditherStrength / max(ditherLevels - 1.0, 1.0);
         rgb = saturate(rgb + dv * amplitude);
     }
@@ -1542,6 +1605,264 @@ float4 ps_mosaic_h_average(float4 pos : SV_Position) : SV_Target {
 }
 ]]
 
+--[[pixelshader@ps_mosaic_h_select:
+Texture2D src_tex : register(t0);
+
+cbuffer constant0 : register(b0) {
+    float4 c0; // width, height, pixel size, color levels
+    float4 c1; // tone steps, dither mode, dither strength, edge strength
+    float4 c2; // alpha protect, alpha threshold, palette mode, color mode (2 中央値 / 3 多数決 / 4 最も明るい色 / 5 最も暗い色)
+    float4 c3; // edge style, grid mode, map origin x, map origin y
+    float4 c4; // screenCenterX, screenCenterY, scaleX, scaleY
+    float4 c5; // cosR, sinR, centerX, centerY
+    float4 c6; // map width, map height, linear average, color diff
+};
+
+// v1.20: 縮小バッファの 1 画素 = 1 ブロック。ブロックの中の実在する画素を 1 つ選んで（乗算済みのまま）書く。
+// 空のブロックはアルファ -1（メインのパスは中心の色に戻す。ps_mosaic_h_average と同じ約束）
+
+// 以下 3 つは ps_mosaic_h の複製（正本は ps_mosaic_h。変更時は両方直す）
+float2 object_pixel_to_screen(float2 sourcePos, float2 resolution) {
+    float localX = (sourcePos.x + 0.5 - resolution.x * 0.5 - c5.z) * c4.z;
+    float localY = (sourcePos.y + 0.5 - resolution.y * 0.5 - c5.w) * c4.w;
+
+    return float2(
+        c4.x + localX * c5.x - localY * c5.y,
+        c4.y + localX * c5.y + localY * c5.x
+    );
+}
+
+float2 screen_to_object_pixel(float2 screenPos, float2 resolution) {
+    float dx = screenPos.x - c4.x;
+    float dy = screenPos.y - c4.y;
+
+    float invX = dx * c5.x + dy * c5.y;
+    float invY = -dx * c5.y + dy * c5.x;
+
+    float safeScaleX = c4.z;
+    float safeScaleY = c4.w;
+
+    if (abs(safeScaleX) < 0.00001) {
+        safeScaleX = 0.00001;
+    }
+    if (abs(safeScaleY) < 0.00001) {
+        safeScaleY = 0.00001;
+    }
+
+    return float2(
+        invX / safeScaleX + resolution.x * 0.5 + c5.z - 0.5,
+        invY / safeScaleY + resolution.y * 0.5 + c5.w - 0.5
+    );
+}
+
+float2 block_index(float2 sourcePos, float2 resolution, float psize, float gridMode) {
+    float2 b = floor(sourcePos / psize);
+    if (gridMode > 1.5) {
+        b = floor((sourcePos - resolution * 0.5) / psize);
+    } else if (gridMode > 0.5) {
+        b = floor(object_pixel_to_screen(sourcePos, resolution) / psize);
+    }
+    return b;
+}
+
+float sel_luma(float3 c) {
+    return dot(c, float3(0.299, 0.587, 0.114));
+}
+
+// 中央値・多数決が読む k x k の格子の (列, 行) の画素。ブロックの中の (i + 0.5) / k の位置を
+// 画素に丸める（整数のちょうど上に乗らないよう 1/256 だけずらす）。オブジェクトの外・ブロックの外ならアルファ -1
+float4 sel_sample(float2 cell, float k, float2 block, float2 resolution, float psize, float gridMode) {
+    float2 p = (block + (cell + 0.5) / k) * psize + 0.00390625;
+    if (gridMode > 1.5) {
+        p = p + resolution * 0.5;
+    } else if (gridMode > 0.5) {
+        p = screen_to_object_pixel(p, resolution);
+    }
+    float2 f = floor(p);
+    float4 r = float4(0.0, 0.0, 0.0, -1.0);
+    if (f.x >= 0.0 && f.y >= 0.0 && f.x < resolution.x && f.y < resolution.y) {
+        float2 b = block_index(f + 0.5, resolution, psize, gridMode);
+        if (b.x == block.x && b.y == block.y) {
+            r = src_tex.Load(int3((int)f.x, (int)f.y, 0));
+        }
+    }
+    return r;
+}
+
+float4 ps_mosaic_h_select(float4 pos : SV_Position) : SV_Target {
+    float width  = max(c0.x, 1.0);
+    float height = max(c0.y, 1.0);
+    float psize  = max(c0.z, 1.0);
+    float colorMode = c2.w;
+    float gridMode = c3.y;
+    float2 resolution = float2(width, height);
+    float2 block = floor(pos.xy) + c3.zw;
+    float4 result = float4(0.0, 0.0, 0.0, -1.0);
+
+    if (colorMode > 3.5) {
+        // 最も明るい色 / 最も暗い色: 平均と同じく、ブロックに属する画素をすべて読む（走査範囲の決め方は ps_mosaic_h_average と同じ）
+        float2 lo = block * psize;
+        float2 hi = lo + float2(psize, psize);
+        if (gridMode > 1.5) {
+            lo = lo + resolution * 0.5;
+            hi = hi + resolution * 0.5;
+        } else if (gridMode > 0.5) {
+            float2 p0 = screen_to_object_pixel(block * psize, resolution);
+            float2 p1 = screen_to_object_pixel(float2(block.x + 1.0, block.y) * psize, resolution);
+            float2 p2 = screen_to_object_pixel(float2(block.x, block.y + 1.0) * psize, resolution);
+            float2 p3 = screen_to_object_pixel(float2(block.x + 1.0, block.y + 1.0) * psize, resolution);
+            lo = min(min(p0, p1), min(p2, p3));
+            hi = max(max(p0, p1), max(p2, p3));
+        }
+        float fx0 = floor(lo.x - 0.5);
+        float fx1 = ceil(hi.x - 0.5);
+        float fy0 = floor(lo.y - 0.5);
+        float fy1 = ceil(hi.y - 0.5);
+        if (gridMode < 0.5 || gridMode > 1.5) {
+            fx0 = ceil(lo.x - 0.5);
+            fx1 = ceil(hi.x - 0.5) - 1.0;
+            fy0 = ceil(lo.y - 0.5);
+            fy1 = ceil(hi.y - 0.5) - 1.0;
+        }
+        fx0 = clamp(fx0, 0.0, width - 1.0);
+        fx1 = clamp(fx1, 0.0, width - 1.0);
+        fy0 = clamp(fy0, 0.0, height - 1.0);
+        fy1 = clamp(fy1, 0.0, height - 1.0);
+        int x0 = (int)fx0;
+        int x1 = (int)fx1;
+        int y0 = (int)fy0;
+        int y1 = (int)fy1;
+
+        // 明るい: 黒の上に置いた明るさ（乗算済みの明るさ）が最大。暗い: 白の上に置いた明るさ（+ 透明さ）が最小。
+        // 同じ値なら先に読んだ画素（上の行・左）を採る
+        bool darkest = colorMode > 4.5;
+        float best = darkest ? 1.0e30 : -1.0e30;
+        [loop]
+        for (int y = y0; y <= y1; y++) {
+            [loop]
+            for (int x = x0; x <= x1; x++) {
+                float2 b = block_index(float2((float)x + 0.5, (float)y + 0.5), resolution, psize, gridMode);
+                if (b.x == block.x && b.y == block.y) {
+                    float4 px = src_tex.Load(int3(x, y, 0));
+                    float key = sel_luma(px.rgb);
+                    if (darkest) {
+                        key = key + (1.0 - px.a);
+                        if (key < best) {
+                            best = key;
+                            result = px;
+                        }
+                    } else if (key > best) {
+                        best = key;
+                        result = px;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    // 中央値・多数決: k x k の格子だけを読む（k = ピクセルサイズ、6 で頭打ち。比較は最大 36 x 36 回）
+    int k = (int)clamp(ceil(psize), 1.0, 6.0);
+    float kf = (float)k;
+
+    if (colorMode > 2.5) {
+        // 多数決: 乗算済み RGBA の差がどのチャンネルも 1/16 以下の画素を仲間と数え、仲間の最も多い画素（同数なら先の画素）
+        float bestVotes = -1.0;
+        [loop]
+        for (int iy = 0; iy < k; iy++) {
+            [loop]
+            for (int ix = 0; ix < k; ix++) {
+                float4 si = sel_sample(float2((float)ix, (float)iy), kf, block, resolution, psize, gridMode);
+                if (si.a >= 0.0) {
+                    float votes = 0.0;
+                    [loop]
+                    for (int jy = 0; jy < k; jy++) {
+                        [loop]
+                        for (int jx = 0; jx < k; jx++) {
+                            float4 sj = sel_sample(float2((float)jx, (float)jy), kf, block, resolution, psize, gridMode);
+                            if (sj.a >= 0.0) {
+                                float4 d = abs(si - sj);
+                                if (max(max(d.r, d.g), max(d.b, d.a)) <= 0.0625) {
+                                    votes += 1.0;
+                                }
+                            }
+                        }
+                    }
+                    if (votes > bestVotes) {
+                        bestVotes = votes;
+                        result = si;
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    // 中央値: 不透明度 0.5 以上の画素が半数以上なら、その中で明るさが中央（下側の中央）の画素。
+    // 半数未満なら、不透明度 0.5 未満の画素の中で不透明度が中央の画素。順位は値、同じ値なら格子の順
+    float total = 0.0;
+    float nOp = 0.0;
+    [loop]
+    for (int ty = 0; ty < k; ty++) {
+        [loop]
+        for (int tx = 0; tx < k; tx++) {
+            float4 s = sel_sample(float2((float)tx, (float)ty), kf, block, resolution, psize, gridMode);
+            if (s.a >= 0.0) {
+                total += 1.0;
+                if (s.a >= 0.5) {
+                    nOp += 1.0;
+                }
+            }
+        }
+    }
+    bool useOp = nOp * 2.0 >= total;
+    float m = total - nOp;
+    if (useOp) {
+        m = nOp;
+    }
+    float target = floor((m - 1.0) * 0.5);
+    bool found = false;
+    [loop]
+    for (int my = 0; my < k; my++) {
+        [loop]
+        for (int mx = 0; mx < k; mx++) {
+            float4 si = sel_sample(float2((float)mx, (float)my), kf, block, resolution, psize, gridMode);
+            bool ci = !found && si.a >= 0.0 && ((si.a >= 0.5) == useOp);
+            if (ci) {
+                float ki = si.a;
+                if (useOp) {
+                    ki = sel_luma(si.rgb / si.a);
+                }
+                float li = (float)my * kf + (float)mx;
+                float rank = 0.0;
+                [loop]
+                for (int ny = 0; ny < k; ny++) {
+                    [loop]
+                    for (int nx = 0; nx < k; nx++) {
+                        float4 sj = sel_sample(float2((float)nx, (float)ny), kf, block, resolution, psize, gridMode);
+                        if (sj.a >= 0.0 && ((sj.a >= 0.5) == useOp)) {
+                            float kj = sj.a;
+                            if (useOp) {
+                                kj = sel_luma(sj.rgb / sj.a);
+                            }
+                            float lj = (float)ny * kf + (float)nx;
+                            if (kj < ki || (kj == ki && lj < li)) {
+                                rank += 1.0;
+                            }
+                        }
+                    }
+                }
+                if (rank == target) {
+                    result = si;
+                    found = true;
+                }
+            }
+        }
+    }
+    return result;
+}
+]]
+
 local function clamp(v, lo, hi)
   if v < lo then return lo end
   if v > hi then return hi end
@@ -1557,11 +1878,12 @@ if alpha_protect == 1 or alpha_protect == true then
   ap = 1
 end
 
-local dm = math.floor(clamp(tonumber(dither_mode) or 0, 0, 2))
+local dm = math.floor(clamp(tonumber(dither_mode) or 0, 0, 5))
 local pm = math.floor(clamp(tonumber(palette_mode) or 0, 0, 3))
 local es = math.floor(clamp(tonumber(edge_style) or 0, 0, 1))
 local gm = math.floor(clamp(tonumber(grid_mode) or 0, 0, 2))
-local cm = math.floor(clamp(tonumber(color_mode) or 0, 0, 1))
+-- 0 中心の色 / 1 平均 / 2 中央値 / 3 多数決 / 4 最も明るい色 / 5 最も暗い色（1 以上は縮小バッファを使う）
+local cm = math.floor(clamp(tonumber(color_mode) or 0, 0, 5))
 -- v1.10: リニアで平均（平均のパスだけが見る）と、GameBoy の色差（0 RGB は v1.01 と同じ）
 local lin_avg = (avg_linear == 1 or avg_linear == true) and 1 or 0
 local cdiff = math.floor(clamp(tonumber(color_diff) or 0, 0, 3))
@@ -1615,10 +1937,10 @@ end
 local MAP = "cache:mosaic_h/map"
 local MAP_MAX = 16384
 local map_x, map_y, map_w, map_h = 0, 0, 1, 1
-if cm == 1 and psize <= 1 and gm ~= 1 then
-  cm = 0                                  -- 1 画素のブロックは平均しても中心の色と同じ
+if cm >= 1 and psize <= 1 and gm ~= 1 then
+  cm = 0                                  -- 1 画素のブロックは平均・中央値などでも中心の色と同じ
 end
-if cm == 1 then
+if cm >= 1 then
   local kx0, ky0 = math.huge, math.huge
   local kx1, ky1 = -math.huge, -math.huge
   for _, c in ipairs({ { 0.5, 0.5 }, { W - 0.5, 0.5 }, { 0.5, H - 0.5 }, { W - 0.5, H - 0.5 } }) do
@@ -1664,5 +1986,7 @@ local params = {
 obj.clearbuffer(MAP, map_w, map_h)
 if cm == 1 then
   obj.pixelshader("ps_mosaic_h_average", MAP, { "object" }, params, "copy")
+elseif cm >= 2 then
+  obj.pixelshader("ps_mosaic_h_select", MAP, { "object" }, params, "copy")
 end
 obj.pixelshader("ps_mosaic_h", "object", { "object", MAP }, params, "copy", "clamp")
